@@ -10,10 +10,11 @@
 # Caching (ADR-031 e): `astral-sh/setup-uv`'s own `enable-cache: true`
 # (keyed on uv.lock/pyproject.toml automatically).
 #
-# Action pins verified live 2026-09-03 (repo-gates-and-hooks rule 8):
-#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1  (sha 3d3c42e5aac5ba805825da76410c181273ba90b1)
+# Every `uses:` below is pinned by commit SHA with its tag as a trailing
+# comment. Verified live 2026-09-03 (repo-gates-and-hooks rule 8):
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
 #   gh api repos/astral-sh/setup-uv/releases/latest --jq .tag_name               -> v10.0.1 (sha 20cfd1bf945f4377ade1205e4dbc17946fc9a30d)
-#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0  (sha bcd2ba49218906704ab6c1aa796996da409d3eb1)
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
 name: python-gate
 
 on:
@@ -44,7 +45,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: docs-only
@@ -73,16 +74,16 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
           python-version-file: ${{ inputs.python-version-file }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
@@ -104,16 +105,16 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
           python-version-file: ${{ inputs.python-version-file }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
@@ -132,11 +133,11 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}

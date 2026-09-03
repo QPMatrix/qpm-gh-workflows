@@ -18,11 +18,16 @@
 # github.com/QPMatrix/* via authenticated git instead of the public module
 # proxy (a private module 404s/checksum-fails against proxy.golang.org).
 #
-# Action pins verified live 2026-09-03 (repo-gates-and-hooks rule 8):
-#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1  (sha 3d3c42e5aac5ba805825da76410c181273ba90b1)
-#   gh api repos/actions/setup-go/releases/latest --jq .tag_name                 -> v7.0.0  (sha b7ad1dad31e06c5925ef5d2fc7ad053ef454303e)
-#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0  (sha bcd2ba49218906704ab6c1aa796996da409d3eb1)
-#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0  (sha 55cc8345863c7cc4c66a329aec7e433d2d1c52a9)
+# Every `uses:` below is pinned by commit SHA with its tag as a trailing
+# comment (`uses: owner/repo@<40-hex-sha> # vX.Y.Z`) — a tag is mutable, a
+# commit sha is not. Verified live 2026-09-03 (repo-gates-and-hooks rule
+# 8), each tag dereferenced to its COMMIT sha (see rust-gate.yml's header
+# for the annotated-tag-object gotcha this dereferencing avoids — none of
+# the tags below turned out to be annotated, but the check was made):
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
+#   gh api repos/actions/setup-go/releases/latest --jq .tag_name                 -> v7.0.0
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0
 name: go-gate
 
 on:
@@ -52,7 +57,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: docs-only
@@ -81,15 +86,15 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: actions/setup-go@v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ format('{0}/go.mod', inputs.working-directory) }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
@@ -102,7 +107,7 @@ jobs:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
         name: Cache buf/protoc-plugin binaries
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: buf-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) }}
@@ -127,15 +132,15 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: actions/setup-go@v7.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: ${{ format('{0}/go.mod', inputs.working-directory) }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
@@ -148,7 +153,7 @@ jobs:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
         name: Cache buf/protoc-plugin binaries
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: buf-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) }}
@@ -168,11 +173,11 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}

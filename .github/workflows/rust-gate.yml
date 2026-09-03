@@ -23,18 +23,28 @@
 # automatically; `type=gha` BuildKit layer cache is `./check image`'s own
 # concern (the caller's Dockerfile-build step), not this workflow's.
 #
-# Action pins verified live 2026-09-03 (repo-gates-and-hooks rule 8 — the
-# releases API, never memory):
-#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1  (sha 3d3c42e5aac5ba805825da76410c181273ba90b1)
-#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0  (sha bcd2ba49218906704ab6c1aa796996da409d3eb1)
-#   gh api repos/Swatinem/rust-cache/releases/latest --jq .tag_name              -> v2.9.2  (sha 63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7)
-#   gh api repos/taiki-e/install-action/releases/latest --jq .tag_name           -> v2.87.4 (sha e67fa11c4b9316fa714ddf0abed07a0c3143b95b)
-#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0  (sha 55cc8345863c7cc4c66a329aec7e433d2d1c52a9)
-# dtolnay/rust-toolchain stays pinned to @master: its own README directs
-# @master (never @stable/@nightly) whenever an explicit `toolchain:` input
-# is passed, which every job below does (qpm-rs-service/qp-gateway
-# precedent) — this action has no independent semver release to pin
-# instead (repo-gates-and-hooks rule 7: verified live, not assumed stale).
+# Every `uses:` below is pinned by commit SHA with its tag as a trailing
+# comment (`uses: owner/repo@<40-hex-sha> # vX.Y.Z`) — a tag is mutable,
+# a commit sha is not (round-2 review finding). Verified live 2026-09-03
+# (repo-gates-and-hooks rule 8 — the releases API, never memory), each
+# tag's ref object dereferenced to its COMMIT (an annotated tag's own
+# `git/ref/tags/<tag>` response names a TAG OBJECT sha, not a commit —
+# `Swatinem/rust-cache@v2.9.2` is exactly that case, caught in round 2:
+# its tag object is `63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7`, but the
+# commit `uses:` must resolve to is `6323deb102c322ba6fcbdcafc7e3dddab59af2b6`,
+# fetched via `gh api repos/Swatinem/rust-cache/git/tags/63fed3e2...
+# --jq .object.sha`):
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#   gh api repos/Swatinem/rust-cache/releases/latest --jq .tag_name              -> v2.9.2 (annotated tag — dereferenced, see above)
+#   gh api repos/taiki-e/install-action/releases/latest --jq .tag_name           -> v2.87.4
+#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0
+# dtolnay/rust-toolchain stays pinned to @master's commit, `# master` as
+# the trailing comment (no tagged releases at all — its own README
+# directs @master, never @stable/@nightly, whenever an explicit
+# `toolchain:` input is passed, which every job below does — qpm-rs-
+# service/qp-gateway precedent): resolved live via
+# `gh api repos/dtolnay/rust-toolchain/commits/master --jq .sha`.
 name: rust-gate
 
 on:
@@ -67,7 +77,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: docs-only
@@ -96,22 +106,22 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (no tagged releases; own README directs @master)
         with:
           toolchain: stable
           components: rustfmt, clippy
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: Swatinem/rust-cache@v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: taiki-e/install-action@v2.87.4
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: cargo-deny@${{ inputs.cargo-deny-version }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
@@ -124,7 +134,7 @@ jobs:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
         name: Cache buf/protoc-plugin binaries
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: buf-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) }}
@@ -149,18 +159,18 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (no tagged releases; own README directs @master)
         with:
           toolchain: stable
           components: rustfmt, clippy
       - if: needs.changes.outputs.docs_only != 'true'
-        uses: Swatinem/rust-cache@v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
@@ -173,7 +183,7 @@ jobs:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
         name: Cache buf/protoc-plugin binaries
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/bin
           key: buf-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) }}
@@ -193,11 +203,11 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
         name: Mint QPMatrix installation token
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}

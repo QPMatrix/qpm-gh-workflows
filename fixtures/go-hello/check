@@ -5,6 +5,13 @@
 set -e
 
 run_fmt() {
+  echo "==> qpmsec570-ci-tools-marker (proves scripts/ci-tools.sh ran before this stage)"
+  if ! command -v qpmsec570-ci-tools-marker >/dev/null 2>&1; then
+    echo "qpmsec570-ci-tools-marker not on PATH — scripts/ci-tools.sh did not run" \
+      "(or did not run BEFORE this stage) — QPMSEC-570 round 7's own proof" >&2
+    exit 1
+  fi
+  qpmsec570-ci-tools-marker
   echo "==> gofmt -l"
   out="$(gofmt -l .)"
   if [ -n "$out" ]; then

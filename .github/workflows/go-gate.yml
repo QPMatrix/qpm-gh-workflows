@@ -18,6 +18,49 @@
 # github.com/QPMatrix/* via authenticated git instead of the public module
 # proxy (a private module 404s/checksum-fails against proxy.golang.org).
 #
+# Per-repo tool hook (QPMSEC-570 round 7): a repo's contracts-gen.sh (or
+# equivalent) can need tools this reusable workflow has no business
+# hardcoding — protoc-gen-go/protoc-gen-go-grpc, protoc-gen-prost/
+# protoc-gen-tonic, and whatever future repos in the leg-B rollout
+# (QPMSEC-577, ~30 repos) bring with them. `scripts/ci-tools.sh`, when
+# present in the caller's working-directory, is run BEFORE every stage in
+# every job that runs one (format-lint, test, image) — cached on its own
+# hash (a version bump inside the script busts the cache automatically,
+# no separate version-keyed input needed). The hook is the REPO's own
+# responsibility: this workflow only checks for the file and runs it,
+# never inspects or hardcodes its contents — same shape as the existing
+# `scripts/install-buf.sh` step below, generalised. `./check` (no
+# arguments) is UNCHANGED for a human running it locally — they install
+# tools per the repo's own README, same as always; this hook is CI-only.
+# Real incident this closes: qpsb-ingest/qpsb-gateway's PRs #36/#33 went
+# red within 12 seconds — `protoc-gen-go`/`protoc-gen-prost` "not found
+# on PATH" — because the OLD hand-written ci.yml these thin callers
+# replaced carried per-repo tool-install steps this reusable workflow
+# never replicated.
+#
+# Alternatives considered and rejected: (a) hardcode the protoc plugins
+# into THIS file — couples a shared workflow to two specific repos'
+# choices and does not scale to ~30 repos with different toolchains;
+# (b) have contracts-gen.sh self-install missing tools on demand — mixes
+# CI bootstrapping into a script a human also runs locally, and the
+# coordinator's own instruction is that `./check` stays human-unchanged;
+# (c) a flat `extra-tools:` string input parsed generically — every
+# repo's real install recipe (go install, cargo install, a checksum-
+# verified curl download) differs too much to express safely as one
+# input shape. The hook script (this repo's existing `install-buf.sh`
+# pattern, now with one more file the gate looks for) needed none of
+# that: zero new inputs, and each repo's install recipe stays exactly
+# what it already is.
+#
+# The `image` job's mint step used to have NO matching git-auth
+# `insteadOf` config step (round 7 review, found live in qpsb-ingest's
+# own failing run: `./check image`'s trailing repo-instructions fetch —
+# `scripts/qp-skills-fetch.sh`, private repo — failed
+# `fatal: could not read Username for 'https://github.com'`, exit 128,
+# because the token from the mint step was exported to `./check image`'s
+# BuildKit secret env vars but git itself was never configured to use
+# it). Fixed the same way format-lint/test already had it.
+#
 # Every `uses:` below is pinned by commit SHA with its tag as a trailing
 # comment (`uses: owner/repo@<40-hex-sha> # vX.Y.Z`) — a tag is mutable, a
 # commit sha is not. Verified live 2026-09-03 (repo-gates-and-hooks rule
@@ -117,6 +160,18 @@ jobs:
         run: |
           sh scripts/install-buf.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
+        name: Cache CI tools (scripts/ci-tools.sh)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/bin
+          key: ci-tools-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
+        name: Install CI tools (scripts/ci-tools.sh)
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - if: needs.changes.outputs.docs_only != 'true'
         run: ./check fmt
         working-directory: ${{ inputs.working-directory }}
@@ -163,6 +218,18 @@ jobs:
         run: |
           sh scripts/install-buf.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
+        name: Cache CI tools (scripts/ci-tools.sh)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/bin
+          key: ci-tools-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
+        name: Install CI tools (scripts/ci-tools.sh)
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - if: needs.changes.outputs.docs_only != 'true'
         run: ./check test
         working-directory: ${{ inputs.working-directory }}
@@ -183,6 +250,23 @@ jobs:
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
           owner: QPMatrix
           repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
+        name: Cache CI tools (scripts/ci-tools.sh)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/bin
+          key: ci-tools-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
+        name: Install CI tools (scripts/ci-tools.sh)
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != ''
         name: ./check image
         run: ./check image

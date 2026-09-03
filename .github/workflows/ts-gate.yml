@@ -1,0 +1,192 @@
+# Reusable PR-only quality gate for a TypeScript UI/tooling repo (ADR-031,
+# code-craft: TypeScript is UI/tooling only, never a backend). Three jobs
+# run in PARALLEL — format-lint, test, image — each calling the caller
+# repo's own `./check <stage>` so hook ⊆ CI holds by construction
+# (repo-gates-and-hooks rule 4).
+#
+# `oven-sh/setup-bun` is what fixes qpsb-desktop's `./check: bun: not
+# found` (exit 127, named in the QPMSEC-570 envelope) — no reusable
+# ts-gate workflow existed before this one for repo-birth/wire-gate to
+# emit, so a hand-maintained ci.yml never got Bun installed. Rollout to
+# qpsb-desktop itself is leg B (out of scope here).
+#
+# Trigger/concurrency live in the CALLER (ADR-031 a/b); this file only
+# declares `workflow_call`. Docs-only short-circuit (ADR-031 c) — see
+# rust-gate.yml's header for the full reasoning.
+#
+# Caching (ADR-031 e): `oven-sh/setup-bun`'s own cache (`no-cache: false`,
+# the default) covers only the Bun EXECUTABLE — it installs no project
+# dependencies, unlike `actions/setup-node`'s `cache: npm`. `bun install
+# --frozen-lockfile` therefore runs explicitly, right after setup-bun, in
+# every job whose stage needs `node_modules` (format-lint, test — never
+# `image`, which only runs `docker build`), with its OWN cache: Bun's
+# global install cache at `~/.bun/install/cache`, keyed on the fixture's
+# `bun.lock` hash (QPMSEC-570 round 5: the reusable workflow ran
+# `./check lint` with no install step at all — `bun --bun tsc --noEmit`
+# failed `error: Script not found "tsc"` because `node_modules/.bin` never
+# existed — self-test's own ts-gate-selftest job caught this live, PR #1).
+#
+# The other three gates (rust-gate.yml, go-gate.yml, python-gate.yml)
+# have no equivalent gap: cargo/go both auto-fetch dependencies on
+# build/test/lint with no separate install step, and python-gate.yml's
+# `./check` stages run tools via `uvx`, which self-installs its OWN
+# target package per invocation (`uvx ruff …`, `uvx --with pytest
+# pytest …`) rather than depending on a pre-installed project
+# environment — re-verified this round, not assumed.
+#
+# Every `uses:` below is pinned by commit SHA with its tag as a trailing
+# comment. Verified live 2026-09-03 (repo-gates-and-hooks rule 8):
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
+#   gh api repos/oven-sh/setup-bun/releases/latest --jq .tag_name                -> v2.2.0
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0
+name: ts-gate
+
+on:
+  workflow_call:
+    inputs:
+      private-deps:
+        description: >-
+          Comma- or newline-separated QPMatrix repo names this repo fetches
+          over git (`github:QPMatrix/<name>` bun dependencies) — the
+          mandatory qpsb-skills/qpsb-agents pair included by the CALLER,
+          not assumed here. Empty skips the mint entirely.
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        description: Directory (relative to repo root) the caller's project lives in — used by the self-test workflow to point at an in-repo fixture; real callers leave it at ".".
+        type: string
+        required: false
+        default: "."
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.docs-only.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: docs-only
+        name: Detect a docs-only change (ADR-031 c)
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="HEAD~1"
+          fi
+          if ! git cat-file -e "$base" 2>/dev/null; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          if [ -z "$changed" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -qvE '(\.md$|^docs/|^LICENSE$|^\.gitignore$)'; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  format-lint:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: ${{ format('{0}/package.json', inputs.working-directory) }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: Cache Bun install cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles(format('{0}/bun.lock', inputs.working-directory)) }}
+          restore-keys: bun-${{ runner.os }}-
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: bun install
+        run: bun install --frozen-lockfile
+        working-directory: ${{ inputs.working-directory }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check fmt
+        working-directory: ${{ inputs.working-directory }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check lint
+        working-directory: ${{ inputs.working-directory }}
+
+  test:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: ${{ format('{0}/package.json', inputs.working-directory) }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: Cache Bun install cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles(format('{0}/bun.lock', inputs.working-directory)) }}
+          restore-keys: bun-${{ runner.os }}-
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: bun install
+        run: bun install --frozen-lockfile
+        working-directory: ${{ inputs.working-directory }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check test
+        working-directory: ${{ inputs.working-directory }}
+
+  image:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != ''
+        name: ./check image
+        run: ./check image
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}

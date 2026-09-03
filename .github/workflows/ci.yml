@@ -1,4 +1,5 @@
-# Gate = ./check, mirrored by .githooks/pre-commit (parity rule).
+# Gate = ./check, mirrored by .githooks/pre-commit (parity rule). Every
+# uses: below is pinned by commit SHA with its tag as a trailing comment.
 # checkout pin verified at birth via:
 #   gh api repos/actions/checkout/releases/latest --jq .tag_name  -> v7.0.1
 #
@@ -12,21 +13,31 @@
 # is not seeded here. A NEW private dep added later to an EXISTING
 # repo needs the token's `repositories:` widened in BOTH
 # workflows. repo-birth SKILL.md, "Private cross-repo dependencies".
+#
+# ADR-031 a/b (QPMSEC-570 round 3 finding 4): this repo's own gate is a
+# gate exactly like every one it births into other repos — pull_request +
+# workflow_dispatch only, never push (branch protection already
+# guarantees main only receives commits that passed a PR's gate; a
+# push:[main] re-run of the identical gate re-checks nothing new), with
+# a cancel-in-progress concurrency group so a fixup push doesn't run every
+# superseded commit's gate to completion.
 name: ci
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Mint QPMatrix installation token (qpsb-skills, qpsb-agents)
         id: qpmatrix-token
-        uses: actions/create-github-app-token@v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}

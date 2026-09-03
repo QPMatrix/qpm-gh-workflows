@@ -1,0 +1,42 @@
+#!/bin/sh
+# Self-test fixture for ts-gate.yml (QPMSEC-570): a real, tiny Bun package
+# exercised by ts-gate.yml's format-lint/test/image jobs via
+# self-test.yml's `working-directory: fixtures/ts-hello`. This is exactly
+# the shape that fixes qpsb-desktop's `bun: not found` once ts-gate.yml
+# is what wire-gate emits for it (leg B, out of scope here).
+set -e
+
+run_fmt() {
+  echo "==> prettier --check"
+  bun run fmt
+}
+
+run_lint() {
+  echo "==> tsc --noEmit"
+  bun run lint
+}
+
+run_test() {
+  echo "==> bun test"
+  bun run test
+}
+
+run_image() {
+  echo "==> docker build"
+  if command -v docker >/dev/null 2>&1; then
+    docker build -t ts-hello-selftest .
+  else
+    echo "    NOTICE: docker not found on PATH — skipping the image build."
+  fi
+}
+
+case "${1:-}" in
+  fmt) run_fmt ;;
+  lint) run_lint ;;
+  test) run_test ;;
+  image) run_image ;;
+  "") run_fmt; run_lint; run_test; run_image ;;
+  *) echo "unknown stage: $1 (expected fmt|lint|test|image)" >&2; exit 1 ;;
+esac
+
+echo "check: green"

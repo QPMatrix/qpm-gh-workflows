@@ -1,0 +1,73 @@
+# Proves the reusable workflows in THIS repo actually work before any
+# consumer's PR ever calls them (QPMSEC-570 scope item 2: "a broken
+# reusable workflow is red in its own repo before any consumer sees it").
+# Calls each of rust-gate.yml/go-gate.yml/python-gate.yml/ts-gate.yml
+# against its own tiny in-repo fixture under fixtures/ (a `working-
+# directory` input every gate workflow carries for exactly this reason —
+# real callers leave it at "."), and image-publish.yml against
+# fixtures/docker-hello's 3-line Dockerfile.
+#
+# Local relative `uses: ./.github/workflows/<file>.yml` reusable-workflow
+# references are a GitHub Actions-supported shape for a workflow calling a
+# sibling workflow in the SAME repository (unlike a local composite
+# action, which needs an explicit second checkout to resolve) — no extra
+# checkout step is needed here.
+#
+# ADR-031 a/b (QPMSEC-570 round 3 finding 4): this workflow is a gate
+# too — pull_request + workflow_dispatch only, never push, same as every
+# reusable workflow it exercises (round 3 removed the push:[main] trigger
+# this file carried through round 2). Consequence, disclosed: the
+# `image-publish-selftest` job below — real-image proof of
+# image-publish.yml, gated `if: github.event_name != 'pull_request'`
+# specifically because it PUSHES a throwaway image to GHCR, which no PR
+# should ever do — can now only run via a manual `workflow_dispatch`,
+# never automatically on merge to main (there is no push event left to
+# fire it). Run it by hand after a change to image-publish.yml merges;
+# automating that dispatch is a follow-up, not designed here.
+name: self-test
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "fixtures/**"
+  workflow_dispatch:
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  rust-gate-selftest:
+    uses: ./.github/workflows/rust-gate.yml
+    with:
+      working-directory: fixtures/rust-hello
+
+  go-gate-selftest:
+    uses: ./.github/workflows/go-gate.yml
+    with:
+      working-directory: fixtures/go-hello
+
+  python-gate-selftest:
+    uses: ./.github/workflows/python-gate.yml
+    with:
+      working-directory: fixtures/python-hello
+
+  ts-gate-selftest:
+    uses: ./.github/workflows/ts-gate.yml
+    with:
+      working-directory: fixtures/ts-hello
+
+  image-publish-selftest:
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/image-publish.yml
+    with:
+      image: ghcr.io/qpmatrix/qpm-gh-workflows-selftest
+      dockerfile: fixtures/docker-hello/Dockerfile
+      context: fixtures/docker-hello
+    secrets: inherit

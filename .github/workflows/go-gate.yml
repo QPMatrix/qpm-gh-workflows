@@ -1,0 +1,192 @@
+# Reusable PR-only quality gate for a Go service repo (ADR-031). Three
+# jobs run in PARALLEL — format-lint, test, image — each calling the
+# caller repo's own `./check <stage>` so hook ⊆ CI holds by construction
+# (repo-gates-and-hooks rule 4).
+#
+# Trigger/concurrency live in the CALLER (repo-birth/wire-gate emit
+# `on: pull_request` + `workflow_dispatch` and the `concurrency` block —
+# ADR-031 a/b); this file only declares `workflow_call`.
+#
+# Docs-only PRs (ADR-031 c) — see rust-gate.yml's header for the full
+# reasoning; the `changes` job here is byte-identical in intent.
+#
+# Caching (ADR-031 e): `actions/setup-go`'s own module+build cache
+# (`cache: true`, the default, keyed on go.sum); a version-keyed cache for
+# the buf/protoc-plugin binaries when the repo uses them.
+#
+# GOPRIVATE is set so `go mod download`/`go build` fetch
+# github.com/QPMatrix/* via authenticated git instead of the public module
+# proxy (a private module 404s/checksum-fails against proxy.golang.org).
+#
+# Every `uses:` below is pinned by commit SHA with its tag as a trailing
+# comment (`uses: owner/repo@<40-hex-sha> # vX.Y.Z`) — a tag is mutable, a
+# commit sha is not. Verified live 2026-09-03 (repo-gates-and-hooks rule
+# 8), each tag dereferenced to its COMMIT sha (see rust-gate.yml's header
+# for the annotated-tag-object gotcha this dereferencing avoids — none of
+# the tags below turned out to be annotated, but the check was made):
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
+#   gh api repos/actions/setup-go/releases/latest --jq .tag_name                 -> v7.0.0
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0
+name: go-gate
+
+on:
+  workflow_call:
+    inputs:
+      private-deps:
+        description: >-
+          Comma- or newline-separated QPMatrix repo names this repo fetches
+          over git (go.mod private modules, scripts/contracts-gen.sh's own
+          clone) — the mandatory qpsb-skills/qpsb-agents pair included by
+          the CALLER, not assumed here. Empty skips the mint entirely.
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        description: Directory (relative to repo root) the caller's project lives in — used by the self-test workflow to point at an in-repo fixture; real callers leave it at ".".
+        type: string
+        required: false
+        default: "."
+
+env:
+  GOPRIVATE: github.com/QPMatrix/*
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.docs-only.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: docs-only
+        name: Detect a docs-only change (ADR-031 c)
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="HEAD~1"
+          fi
+          if ! git cat-file -e "$base" 2>/dev/null; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          if [ -z "$changed" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -qvE '(\.md$|^docs/|^LICENSE$|^\.gitignore$)'; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  format-lint:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ format('{0}/go.mod', inputs.working-directory) }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
+        name: Cache buf/protoc-plugin binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/bin
+          key: buf-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
+        name: Install buf
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          sh scripts/install-buf.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check fmt
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check lint
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+
+  test:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ format('{0}/go.mod', inputs.working-directory) }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
+        name: Cache buf/protoc-plugin binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/bin
+          key: buf-${{ runner.os }}-${{ hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/install-buf.sh', inputs.working-directory)) != ''
+        name: Install buf
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          sh scripts/install-buf.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check test
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+
+  image:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != ''
+        name: ./check image
+        run: ./check image
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+          QPSECONDBRAIN_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}

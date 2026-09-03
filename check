@@ -1,0 +1,18 @@
+#!/bin/sh
+# Starter gate from repo birth — EXTEND ME as the repo grows content.
+# Hook = CI = this file (parity rule). Fetch BEFORE check, ALWAYS
+# (QPMSEC-436 review round 2, finding 2): a fresh clone carries no
+# .cache/ (gitignored), so instructions.py itself does not exist on
+# disk until scripts/qp-skills-fetch.sh vendors it — this order is the
+# only one that can ever work, and a fetch failure surfaces as that
+# script's own clear git error, never a Python stack trace for a file
+# that is not there yet. --require-sources (finding 4): CI must never
+# silently accept the qpsb-agents local-stand-in fallback — a laptop
+# path cannot exist on a runner anyway, so this turns a silent gap into
+# a clear, named failure instead.
+set -e
+sh scripts/qp-skills-fetch.sh
+sh scripts/qp-agents-fetch.sh
+python3 .cache/qp-skills/skills/repo-instructions/scripts/instructions.py check . --require-sources
+find . -name '*.sh' -not -path './.git/*' -not -path './.cache/*' -exec sh -n {} +
+echo "check: green"

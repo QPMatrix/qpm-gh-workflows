@@ -1,0 +1,10 @@
+#!/bin/sh
+# Delegates to the repo gate — hooks mirror CI (repo-gates-and-hooks).
+# Primary-worktree guard runs first (QPMSEC-389): refuses a commit on a
+# seat branch (task/*) made directly in this PRIMARY checkout instead of
+# a worktree.sh tree. Canonical source: qpsb-skills
+# skills/worker-dispatch/scripts/guard-primary-worktree.sh — this copy
+# is seeded verbatim at birth; do not hand-edit the guard logic here.
+set -e
+sh "$(dirname "$0")/guard-primary-worktree.sh"
+exec ./check

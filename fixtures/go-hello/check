@@ -1,0 +1,45 @@
+#!/bin/sh
+# Self-test fixture for go-gate.yml (QPMSEC-570): a real, tiny Go module
+# exercised by go-gate.yml's format-lint/test/image jobs via
+# self-test.yml's `working-directory: fixtures/go-hello`.
+set -e
+
+run_fmt() {
+  echo "==> gofmt -l"
+  out="$(gofmt -l .)"
+  if [ -n "$out" ]; then
+    echo "gofmt needs to be run on:"
+    echo "$out"
+    exit 1
+  fi
+}
+
+run_lint() {
+  echo "==> go vet"
+  go vet ./...
+}
+
+run_test() {
+  echo "==> go test"
+  go test ./...
+}
+
+run_image() {
+  echo "==> docker build"
+  if command -v docker >/dev/null 2>&1; then
+    docker build -t go-hello-selftest .
+  else
+    echo "    NOTICE: docker not found on PATH — skipping the image build."
+  fi
+}
+
+case "${1:-}" in
+  fmt) run_fmt ;;
+  lint) run_lint ;;
+  test) run_test ;;
+  image) run_image ;;
+  "") run_fmt; run_lint; run_test; run_image ;;
+  *) echo "unknown stage: $1 (expected fmt|lint|test|image)" >&2; exit 1 ;;
+esac
+
+echo "check: green"

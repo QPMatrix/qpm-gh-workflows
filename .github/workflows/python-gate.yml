@@ -1,0 +1,150 @@
+# Reusable PR-only quality gate for a Python service repo (ADR-031). Three
+# jobs run in PARALLEL — format-lint, test, image — each calling the
+# caller repo's own `./check <stage>` so hook ⊆ CI holds by construction
+# (repo-gates-and-hooks rule 4).
+#
+# Trigger/concurrency live in the CALLER (ADR-031 a/b); this file only
+# declares `workflow_call`. Docs-only short-circuit (ADR-031 c) — see
+# rust-gate.yml's header for the full reasoning.
+#
+# Caching (ADR-031 e): `astral-sh/setup-uv`'s own `enable-cache: true`
+# (keyed on uv.lock/pyproject.toml automatically).
+#
+# Action pins verified live 2026-09-03 (repo-gates-and-hooks rule 8):
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1  (sha 3d3c42e5aac5ba805825da76410c181273ba90b1)
+#   gh api repos/astral-sh/setup-uv/releases/latest --jq .tag_name               -> v10.0.1 (sha 20cfd1bf945f4377ade1205e4dbc17946fc9a30d)
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0  (sha bcd2ba49218906704ab6c1aa796996da409d3eb1)
+name: python-gate
+
+on:
+  workflow_call:
+    inputs:
+      private-deps:
+        description: >-
+          Comma- or newline-separated QPMatrix repo names this repo fetches
+          over git (uv git dependencies) — the mandatory qpsb-skills/
+          qpsb-agents pair included by the CALLER, not assumed here. Empty
+          skips the mint entirely.
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        description: Directory (relative to repo root) the caller's project lives in — used by the self-test workflow to point at an in-repo fixture; real callers leave it at ".".
+        type: string
+        required: false
+        default: "."
+      python-version-file:
+        type: string
+        required: false
+        default: ".python-version"
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.docs-only.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - id: docs-only
+        name: Detect a docs-only change (ADR-031 c)
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="HEAD~1"
+          fi
+          if ! git cat-file -e "$base" 2>/dev/null; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          if [ -z "$changed" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -qvE '(\.md$|^docs/|^LICENSE$|^\.gitignore$)'; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  format-lint:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true'
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          python-version-file: ${{ inputs.python-version-file }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check fmt
+        working-directory: ${{ inputs.working-directory }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check lint
+        working-directory: ${{ inputs.working-directory }}
+
+  test:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true'
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          python-version-file: ${{ inputs.python-version-file }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check test
+        working-directory: ${{ inputs.working-directory }}
+
+  image:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != ''
+        name: ./check image
+        run: ./check image
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}

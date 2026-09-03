@@ -1,0 +1,17 @@
+{
+  "name": "ts-hello-fixture",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "scripts": {
+    "fmt": "bunx --bun prettier --check .",
+    "lint": "bun --bun tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3"
+  }
+}

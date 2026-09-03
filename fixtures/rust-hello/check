@@ -1,0 +1,43 @@
+#!/bin/sh
+# Self-test fixture for rust-gate.yml (QPMSEC-570): a real, tiny cargo
+# crate exercised by rust-gate.yml's format-lint/test/image jobs via
+# self-test.yml's `working-directory: fixtures/rust-hello`. Mirrors the
+# stage-argument shape qp-gateway's own ./check gained on this same
+# ticket, at minimum scale — no contracts-gen, no private deps, this
+# fixture has neither.
+set -e
+
+run_fmt() {
+  echo "==> cargo fmt --check"
+  cargo fmt --all -- --check
+}
+
+run_lint() {
+  echo "==> cargo clippy"
+  cargo clippy --all-targets --all-features -- -D warnings
+}
+
+run_test() {
+  echo "==> cargo test"
+  cargo test --all-targets --all-features
+}
+
+run_image() {
+  echo "==> docker build"
+  if command -v docker >/dev/null 2>&1; then
+    docker build -t rust-hello-selftest .
+  else
+    echo "    NOTICE: docker not found on PATH — skipping the image build."
+  fi
+}
+
+case "${1:-}" in
+  fmt) run_fmt ;;
+  lint) run_lint ;;
+  test) run_test ;;
+  image) run_image ;;
+  "") run_fmt; run_lint; run_test; run_image ;;
+  *) echo "unknown stage: $1 (expected fmt|lint|test|image)" >&2; exit 1 ;;
+esac
+
+echo "check: green"

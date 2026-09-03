@@ -14,15 +14,32 @@
 # declares `workflow_call`. Docs-only short-circuit (ADR-031 c) — see
 # rust-gate.yml's header for the full reasoning.
 #
-# Caching (ADR-031 e): `oven-sh/setup-bun`'s own cache, keyed on
-# bun.lock/package.json (bun-version-file reads packageManager, matching
-# repo-birth's ts-package template).
+# Caching (ADR-031 e): `oven-sh/setup-bun`'s own cache (`no-cache: false`,
+# the default) covers only the Bun EXECUTABLE — it installs no project
+# dependencies, unlike `actions/setup-node`'s `cache: npm`. `bun install
+# --frozen-lockfile` therefore runs explicitly, right after setup-bun, in
+# every job whose stage needs `node_modules` (format-lint, test — never
+# `image`, which only runs `docker build`), with its OWN cache: Bun's
+# global install cache at `~/.bun/install/cache`, keyed on the fixture's
+# `bun.lock` hash (QPMSEC-570 round 5: the reusable workflow ran
+# `./check lint` with no install step at all — `bun --bun tsc --noEmit`
+# failed `error: Script not found "tsc"` because `node_modules/.bin` never
+# existed — self-test's own ts-gate-selftest job caught this live, PR #1).
+#
+# The other three gates (rust-gate.yml, go-gate.yml, python-gate.yml)
+# have no equivalent gap: cargo/go both auto-fetch dependencies on
+# build/test/lint with no separate install step, and python-gate.yml's
+# `./check` stages run tools via `uvx`, which self-installs its OWN
+# target package per invocation (`uvx ruff …`, `uvx --with pytest
+# pytest …`) rather than depending on a pre-installed project
+# environment — re-verified this round, not assumed.
 #
 # Every `uses:` below is pinned by commit SHA with its tag as a trailing
 # comment. Verified live 2026-09-03 (repo-gates-and-hooks rule 8):
 #   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
 #   gh api repos/oven-sh/setup-bun/releases/latest --jq .tag_name                -> v2.2.0
 #   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#   gh api repos/actions/cache/releases/latest --jq .tag_name                    -> v6.1.0
 name: ts-gate
 
 on:
@@ -98,6 +115,17 @@ jobs:
         env:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true'
+        name: Cache Bun install cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles(format('{0}/bun.lock', inputs.working-directory)) }}
+          restore-keys: bun-${{ runner.os }}-
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: bun install
+        run: bun install --frozen-lockfile
+        working-directory: ${{ inputs.working-directory }}
+      - if: needs.changes.outputs.docs_only != 'true'
         run: ./check fmt
         working-directory: ${{ inputs.working-directory }}
       - if: needs.changes.outputs.docs_only != 'true'
@@ -127,6 +155,17 @@ jobs:
         run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
         env:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: Cache Bun install cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles(format('{0}/bun.lock', inputs.working-directory)) }}
+          restore-keys: bun-${{ runner.os }}-
+      - if: needs.changes.outputs.docs_only != 'true'
+        name: bun install
+        run: bun install --frozen-lockfile
+        working-directory: ${{ inputs.working-directory }}
       - if: needs.changes.outputs.docs_only != 'true'
         run: ./check test
         working-directory: ${{ inputs.working-directory }}

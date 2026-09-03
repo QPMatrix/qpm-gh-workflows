@@ -13,18 +13,21 @@
 # action, which needs an explicit second checkout to resolve) — no extra
 # checkout step is needed here.
 #
-# The `image-publish` job only runs on `push`/`workflow_dispatch` (never
-# `pull_request`) — it PUSHES a real (if throwaway) image to GHCR, which a
-# PR from every contributor should not do on every push.
+# ADR-031 a/b (QPMSEC-570 round 3 finding 4): this workflow is a gate
+# too — pull_request + workflow_dispatch only, never push, same as every
+# reusable workflow it exercises (round 3 removed the push:[main] trigger
+# this file carried through round 2). Consequence, disclosed: the
+# `image-publish-selftest` job below — real-image proof of
+# image-publish.yml, gated `if: github.event_name != 'pull_request'`
+# specifically because it PUSHES a throwaway image to GHCR, which no PR
+# should ever do — can now only run via a manual `workflow_dispatch`,
+# never automatically on merge to main (there is no push event left to
+# fire it). Run it by hand after a change to image-publish.yml merges;
+# automating that dispatch is a follow-up, not designed here.
 name: self-test
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/**"
-      - "fixtures/**"
-  push:
-    branches: [main]
     paths:
       - ".github/workflows/**"
       - "fixtures/**"

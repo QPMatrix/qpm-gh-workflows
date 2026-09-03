@@ -13,11 +13,21 @@
 # is not seeded here. A NEW private dep added later to an EXISTING
 # repo needs the token's `repositories:` widened in BOTH
 # workflows. repo-birth SKILL.md, "Private cross-repo dependencies".
+#
+# ADR-031 a/b (QPMSEC-570 round 3 finding 4): this repo's own gate is a
+# gate exactly like every one it births into other repos — pull_request +
+# workflow_dispatch only, never push (branch protection already
+# guarantees main only receives commits that passed a PR's gate; a
+# push:[main] re-run of the identical gate re-checks nothing new), with
+# a cancel-in-progress concurrency group so a fixup push doesn't run every
+# superseded commit's gate to completion.
 name: ci
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

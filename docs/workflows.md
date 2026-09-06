@@ -23,8 +23,10 @@ Common inputs:
 | --- | --- | --- | --- |
 | `private-deps` | string | `""` | Comma/newline QPMatrix repo names this repo fetches over git (the mandatory `qpsb-skills`/`qpsb-agents` pair included by the caller). Empty skips the App-token mint entirely. |
 | `working-directory` | string | `"."` | Where the caller's project lives, relative to repo root. Real callers leave this alone; `self-test.yml` points it at a fixture. |
+| `runner` | string | `""` | Runner label for every job; empty falls through to the caller repo's `QPM_RUNNER` variable, then `ubuntu-latest` — README "Runners". |
 
-`rust-gate.yml` also takes `cargo-deny-version` (default `0.20.2`);
+`rust-gate.yml` also takes `cargo-deny-version` (default `0.20.2`) and
+`runner_heavy` (default `""`, the cargo jobs' runner — README "Runners");
 `python-gate.yml` also takes `python-version-file` (default
 `.python-version`). Every job that mints a token needs
 `secrets: inherit` from the caller so `QPASSISTANCE_CLIENT_ID`/
@@ -70,6 +72,7 @@ to the job summary and the `digest` workflow output.
 | `context` | string | `.` | Build context. |
 | `platforms` | string | `linux/amd64` | Comma-separated buildx platform list. |
 | `private-deps` | string | `""` | Same shape as the gate workflows — exposed to the build as BOTH `qpmatrix_token` and `qpsecondbrain_token` BuildKit secrets (both resolve to the same minted token since the QPMatrix org merge; an unreferenced id is simply unused). |
+| `runner` / `runner_heavy` | string | `""` | The publish job's runner: `runner_heavy`, then `QPM_RUNNER_HEAVY`, then `runner` / `QPM_RUNNER`, then `ubuntu-latest` — README "Runners". |
 
 ### The thin-caller `cd.yml` shape
 

@@ -58,6 +58,14 @@
 #   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
 #   gh api repos/astral-sh/setup-uv/releases/latest --jq .tag_name               -> v10.0.1 (sha 20cfd1bf945f4377ade1205e4dbc17946fc9a30d)
 #   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#
+# Runner selection (QPMSEC-630): every `runs-on:` below is a flag, never a
+# literal — `inputs.runner`, then the caller repo's `QPM_RUNNER` Actions
+# variable, then `ubuntu-latest`. Why a flag: GitHub-hosted minutes ran
+# out estate-wide on 2026-09-06; the account is a USER account (no
+# org-level variables), so the switch is a per-repo variable the
+# orchestrator sets — callers need no edit. Precedence, labels and the
+# proof live in README "Runners" (one home, not five headers).
 name: python-gate
 
 on:
@@ -77,6 +85,14 @@ on:
         type: string
         required: false
         default: "."
+      runner:
+        description: >-
+          Runner label for every job in this workflow (QPMSEC-630). Empty
+          (the default) falls through to the caller repo's QPM_RUNNER
+          Actions variable, then to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
       python-version-file:
         type: string
         required: false
@@ -84,7 +100,7 @@ on:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     outputs:
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
     steps:
@@ -115,7 +131,7 @@ jobs:
 
   format-lint:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
@@ -158,7 +174,7 @@ jobs:
 
   test:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
@@ -198,7 +214,7 @@ jobs:
 
   image:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''

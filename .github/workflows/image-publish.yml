@@ -34,6 +34,17 @@
 #   gh api repos/docker/build-push-action/releases/latest --jq .tag_name         -> v7.3.0
 #   gh api repos/sigstore/cosign-installer/releases/latest --jq .tag_name        -> v4.1.2
 #   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#
+# Runner selection (QPMSEC-630): the publish job's `runs-on:` is a flag,
+# never a literal — `inputs.runner_heavy`, then the caller repo's
+# `QPM_RUNNER_HEAVY` Actions variable, then `inputs.runner` /
+# `QPM_RUNNER`, then `ubuntu-latest`. The runner host does not change
+# what is signed: the OIDC token cosign uses as identity is issued by
+# GitHub's OIDC provider to the JOB, whatever machine runs it, and a
+# Ubicloud runner is a GitHub just-in-time runner registered through
+# GitHub's own REST API — so the certificate identity verified below,
+# the GHCR push under GITHUB_TOKEN and the App merge flow are all
+# unchanged. Precedence, labels and doc references: README "Runners".
 name: image-publish
 
 on:
@@ -63,6 +74,22 @@ on:
         type: string
         required: false
         default: ""
+      runner:
+        description: >-
+          Runner label for every job in this workflow (QPMSEC-630). Empty
+          (the default) falls through to the caller repo's QPM_RUNNER
+          Actions variable, then to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
+      runner_heavy:
+        description: >-
+          Runner label for the publish job (the multi-arch image build).
+          Empty (the default) falls through to QPM_RUNNER_HEAVY, then to
+          runner / QPM_RUNNER, then to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
     outputs:
       digest:
         description: The published image's content digest (sha256:...).
@@ -75,7 +102,7 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_heavy || vars.QPM_RUNNER_HEAVY || inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     steps:

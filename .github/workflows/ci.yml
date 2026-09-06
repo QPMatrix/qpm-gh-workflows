@@ -21,6 +21,11 @@
 # push:[main] re-run of the identical gate re-checks nothing new), with
 # a cancel-in-progress concurrency group so a fixup push doesn't run every
 # superseded commit's gate to completion.
+#
+# Runner selection (QPMSEC-630): this repo's own gate is not a
+# `workflow_call` workflow, so it has no `inputs.runner` — the flag is
+# the repo's `QPM_RUNNER` Actions variable alone, falling back to
+# `ubuntu-latest`. README "Runners".
 name: ci
 on:
   pull_request:
@@ -32,7 +37,7 @@ permissions:
   contents: read
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Mint QPMatrix installation token (qpsb-skills, qpsb-agents)

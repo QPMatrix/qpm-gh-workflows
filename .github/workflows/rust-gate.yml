@@ -88,6 +88,17 @@
 # `toolchain:` input is passed, which every job below does — qpm-rs-
 # service/qp-gateway precedent): resolved live via
 # `gh api repos/dtolnay/rust-toolchain/commits/master --jq .sha`.
+#
+# Runner selection (QPMSEC-630): every `runs-on:` below is a flag, never a
+# literal — `inputs.runner`, then the caller repo's `QPM_RUNNER` Actions
+# variable, then `ubuntu-latest`. The three jobs that compile the crate
+# (format-lint's clippy, test, and image's Dockerfile cargo build) read a
+# heavier knob first — `inputs.runner_heavy`, then `QPM_RUNNER_HEAVY` —
+# so cheap jobs can stay on GitHub-hosted while cargo goes to a bigger
+# VM. Why a flag: GitHub-hosted minutes ran out estate-wide on
+# 2026-09-06; the account is a USER account (no org-level variables), so
+# the switch is a per-repo variable the orchestrator sets — callers need
+# no edit. Precedence, labels and the proof live in README "Runners".
 name: rust-gate
 
 on:
@@ -108,6 +119,23 @@ on:
         type: string
         required: false
         default: "."
+      runner:
+        description: >-
+          Runner label for every job in this workflow (QPMSEC-630). Empty
+          (the default) falls through to the caller repo's QPM_RUNNER
+          Actions variable, then to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
+      runner_heavy:
+        description: >-
+          Runner label for the jobs that compile the crate — format-lint
+          (clippy), test, and image (the Dockerfile's cargo build). Empty
+          (the default) falls through to QPM_RUNNER_HEAVY, then to
+          runner / QPM_RUNNER, then to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
       cargo-deny-version:
         description: cargo-deny version pinned via taiki-e/install-action.
         type: string
@@ -116,7 +144,7 @@ on:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     outputs:
       docs_only: ${{ steps.docs-only.outputs.docs_only }}
     steps:
@@ -147,7 +175,7 @@ jobs:
 
   format-lint:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_heavy || vars.QPM_RUNNER_HEAVY || inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
@@ -212,7 +240,7 @@ jobs:
 
   test:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_heavy || vars.QPM_RUNNER_HEAVY || inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true'
@@ -268,7 +296,7 @@ jobs:
 
   image:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_heavy || vars.QPM_RUNNER_HEAVY || inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''

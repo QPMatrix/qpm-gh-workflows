@@ -24,6 +24,17 @@
 # never automatically on merge to main (there is no push event left to
 # fire it). Run it by hand after a change to image-publish.yml merges;
 # automating that dispatch is a follow-up, not designed here.
+#
+# Runner proof (QPMSEC-630): the four gate jobs above pass no `runner`
+# input, so they prove the fall-through — `vars.QPM_RUNNER` when the
+# orchestrator has set it on THIS repo, the literal `ubuntu-latest`
+# while it has not (the state on the PR that introduced the flag — the
+# repo carried zero Actions variables). `rust-gate-selftest-flagged-
+# runner` proves the OTHER path — the explicit `inputs.runner` /
+# `inputs.runner_heavy` a caller may pass — by feeding the variables in
+# as inputs; it is guarded on `vars.QPM_RUNNER != ''` so it can only run
+# once a real label exists, and a label GitHub cannot match never
+# passes silently: the job queues until its timeout and goes red.
 name: self-test
 
 on:
@@ -62,6 +73,14 @@ jobs:
     uses: ./.github/workflows/ts-gate.yml
     with:
       working-directory: fixtures/ts-hello
+
+  rust-gate-selftest-flagged-runner:
+    if: vars.QPM_RUNNER != ''
+    uses: ./.github/workflows/rust-gate.yml
+    with:
+      working-directory: fixtures/rust-hello
+      runner: ${{ vars.QPM_RUNNER }}
+      runner_heavy: ${{ vars.QPM_RUNNER_HEAVY }}
 
   image-publish-selftest:
     if: github.event_name != 'pull_request'

@@ -1,0 +1,6 @@
+docs: fix a typo in the README
+@@QPM-COMMIT-BOUNDARY@@
+chore: bump a dev dependency
+@@QPM-COMMIT-BOUNDARY@@
+refactor: extract a helper, no behavior change
+@@QPM-COMMIT-BOUNDARY@@

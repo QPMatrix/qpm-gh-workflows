@@ -1,0 +1,4 @@
+feat!: drop the legacy v0 endpoint
+@@QPM-COMMIT-BOUNDARY@@
+fix: correct off-by-one in the paginator
+@@QPM-COMMIT-BOUNDARY@@

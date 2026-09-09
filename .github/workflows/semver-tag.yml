@@ -1,0 +1,250 @@
+# Reusable auto-tag on merge (spec 002-versioned-auto-deploy T-001,
+# plan.md D1/D1a, QPMSEC-726/QPMSEC-707). No release PR to click (owner
+# ruling) — on every invocation this reads the CALLER repo's own git
+# history (checkout with no `repository:`/`ref:` override resolves to the
+# caller, the same behavior every other reusable workflow in this repo
+# already relies on) and, when the commits since the latest v* tag
+# contain a `feat`/`fix`/breaking change, creates and pushes an annotated
+# tag directly — no PR, no human step.
+#
+# App-token mint mechanism copied from
+# `QPMatrix/qpm-rs-auth/.github/workflows/release-plz.yml` (read live via
+# `gh api repos/QPMatrix/qpm-rs-auth/contents/.github/workflows/
+# release-plz.yml`, plan.md D1): org policy can block GITHUB_TOKEN from
+# creating tags/releases (QPMSEC-329), so this workflow mints its own
+# QPMatrix App installation token, scoped to ONLY the caller repo
+# (`repositories: ${{ github.event.repository.name }}` — no cross-repo
+# dependency exists for a plain `git tag`/`git push --tags`, unlike
+# release-plz's `qpm-rs-service` fetch) and rewrites git's GitHub URL to
+# use it (`git config --local url."https://x-access-token:${TOKEN}
+# @github.com/".insteadOf "https://github.com/"`, mirroring
+# release-plz.yml's own `--global` line in MECHANISM; `--local` here
+# since a fresh runner checkout never shares config across concurrent
+# jobs and D1 specifies local scope).
+#
+# D1a — why inline shell, not a third-party tag action: considered
+# `mathieudutour/github-tag-action` (the same conventional-commit ->
+# tag/no-PR job); rejected because it would be the only place in this
+# estate's CD path where a third-party action, not this org's own
+# reviewed code, computes a semver bump and pushes a tag with write
+# access to `main`. The bump logic below is under 40 lines of
+# POSIX-adjacent shell + grep — cheaper to own than to keep re-auditing a
+# third action's release cadence. The classify/find-tag/bump-version
+# blocks below are marked BEGIN/END and are byte-identical (once
+# indentation is stripped) to `scripts/classify-bump.sh`,
+# `scripts/find-latest-tag.sh`, and `scripts/bump-version.sh` in THIS
+# repo — those files are the single source of truth this workflow's
+# logic is tested against (a caller's own checkout never contains this
+# repo's scripts/, so the RUNNING copy has to be inline; the scripts/
+# copies exist purely so self-test.yml can unit-test the logic directly,
+# and `semver-tag-inline-sync-selftest` diffs the two so they can never
+# silently drift — code-craft rule 7).
+#
+# Every `uses:` below is pinned by commit SHA with its tag as a trailing
+# comment, verified live 2026-09-09 (repo-gates-and-hooks rule 8), same
+# SHAs already verified and pinned elsewhere in this repo today:
+#   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
+#   gh api repos/actions/create-github-app-token/releases/latest --jq .tag_name  -> v3.2.0
+#
+# Runner selection (QPMSEC-630): `runs-on:` is a flag, never a literal —
+# `inputs.runner`, then the caller repo's `QPM_RUNNER` Actions variable,
+# then `ubuntu-latest` — README "Runners". This job does no compilation
+# and needs no `runner_heavy` variant.
+name: semver-tag
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: >-
+          Runner label for the release job. Empty (the default) falls
+          through to the caller repo's QPM_RUNNER Actions variable, then
+          to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
+    outputs:
+      version:
+        description: The released version (X.Y.Z, no leading v), empty when no release.
+        value: ${{ jobs.release.outputs.version }}
+      tag:
+        description: The released tag (vX.Y.Z), empty when no release.
+        value: ${{ jobs.release.outputs.tag }}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Mint QPMatrix installation token (caller repo only)
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Configure git identity and auth for QPMatrix
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+        run: |
+          set -eu
+          git config --local user.name "qpassistance[bot]"
+          git config --local user.email "qpassistance[bot]@users.noreply.github.com"
+          git config --local url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Find the latest v* tag reachable from HEAD
+        id: latest-tag
+        run: |
+          set -eu
+          # BEGIN find-latest-tag
+          latest_tag=$(git tag -l 'v*' --sort=-v:refname | head -1)
+
+          if [ -z "$latest_tag" ]; then
+            echo "FAIL: no v* tag reachable from HEAD — semver-tag.yml never guesses a baseline (seed one first, spec 002-versioned-auto-deploy T-002)." >&2
+            exit 1
+          fi
+
+          echo "$latest_tag"
+          # END find-latest-tag
+          echo "tag=$latest_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Classify the bump from commits since ${{ steps.latest-tag.outputs.tag }}
+        id: classify
+        env:
+          COMPARE_RANGE: ${{ steps.latest-tag.outputs.tag }}..HEAD
+        run: |
+          set -eu
+          bump=$(git log "$COMPARE_RANGE" --format='%B@@QPM-COMMIT-BOUNDARY@@' | {
+          # BEGIN classify-bump
+          highest="none"
+          highest_rank=0
+          buffer=""
+          newline=$(printf '\nx')
+          newline=${newline%x}
+
+          rank_of() {
+            case "$1" in
+              major) echo 3 ;;
+              minor) echo 2 ;;
+              patch) echo 1 ;;
+              *) echo 0 ;;
+            esac
+          }
+
+          classify_commit() {
+            msg="$1"
+            [ -z "$msg" ] && return 0
+            subject=$(printf '%s\n' "$msg" | head -1)
+            this="none"
+            if printf '%s\n' "$msg" | grep -qE '^(BREAKING CHANGE|BREAKING-CHANGE):'; then
+              this="major"
+            elif printf '%s\n' "$subject" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:'; then
+              this="major"
+            elif printf '%s\n' "$subject" | grep -qE '^feat(\([^)]*\))?:'; then
+              this="minor"
+            elif printf '%s\n' "$subject" | grep -qE '^fix(\([^)]*\))?:'; then
+              this="patch"
+            fi
+            this_rank=$(rank_of "$this")
+            if [ "$this_rank" -gt "$highest_rank" ]; then
+              highest="$this"
+              highest_rank="$this_rank"
+            fi
+          }
+
+          while IFS= read -r line; do
+            if [ "$line" = "@@QPM-COMMIT-BOUNDARY@@" ]; then
+              classify_commit "$buffer"
+              buffer=""
+            elif [ -z "$buffer" ]; then
+              buffer="$line"
+            else
+              buffer="$buffer$newline$line"
+            fi
+          done
+          classify_commit "$buffer"
+
+          echo "$highest"
+          # END classify-bump
+          })
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "Highest bump since ${{ steps.latest-tag.outputs.tag }}: $bump"
+
+      - name: Compute the next version
+        id: bump
+        if: steps.classify.outputs.bump != 'none'
+        env:
+          CURRENT_TAG: ${{ steps.latest-tag.outputs.tag }}
+          BUMP: ${{ steps.classify.outputs.bump }}
+        run: |
+          set -eu
+          set -- "$CURRENT_TAG" "$BUMP"
+          next_tag=$(
+          # BEGIN bump-version
+          current_tag=${1:?current tag required, e.g. v1.2.3}
+          bump=${2:?bump required: major|minor|patch}
+
+          version=${current_tag#v}
+          major=$(echo "$version" | cut -d. -f1)
+          minor=$(echo "$version" | cut -d. -f2)
+          patch=$(echo "$version" | cut -d. -f3)
+
+          case "$bump" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+            *)
+              echo "unknown bump: $bump (expected major|minor|patch)" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "v${major}.${minor}.${patch}"
+          # END bump-version
+          )
+          echo "tag=$next_tag" >> "$GITHUB_OUTPUT"
+          echo "version=${next_tag#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push the annotated tag
+        if: steps.classify.outputs.bump != 'none'
+        env:
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+          BUMP: ${{ steps.classify.outputs.bump }}
+          CURRENT_TAG: ${{ steps.latest-tag.outputs.tag }}
+        run: |
+          set -eu
+          commit_count=$(git rev-list --count "${CURRENT_TAG}..HEAD")
+          git tag -a "$NEW_TAG" -m "${BUMP}: ${commit_count} commit(s) since ${CURRENT_TAG}"
+          git push origin "$NEW_TAG"
+
+      - name: Publish a GitHub Release (best-effort — a failure here never fails the tag push)
+        if: steps.classify.outputs.bump != 'none'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+          NEW_TAG: ${{ steps.bump.outputs.tag }}
+        run: gh release create "$NEW_TAG" --generate-notes
+
+      - name: No release
+        if: steps.classify.outputs.bump == 'none'
+        run: echo "No feat/fix/breaking commit since ${{ steps.latest-tag.outputs.tag }} — nothing to tag."

@@ -1,0 +1,6 @@
+fix: correct off-by-one in the paginator
+@@QPM-COMMIT-BOUNDARY@@
+feat: add a pagination cursor to the list endpoint
+@@QPM-COMMIT-BOUNDARY@@
+docs: document the new cursor parameter
+@@QPM-COMMIT-BOUNDARY@@

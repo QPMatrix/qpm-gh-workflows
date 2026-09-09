@@ -23,6 +23,7 @@ No catalog entry was reachable for `qpm-gh-workflows` at sync time — add `qp-a
 - board-discipline@2.3.0 — base set — every estate repo
 - spec-development@1.1.0 — base set — every estate repo
 - spec-review@1.1.0 — base set — every estate repo
+- release-and-publish@1.12.0 — .github/workflows/semver-tag.yml
 
 ## Agents mounted (pinned at qpsb-agents@git:https://github.com/QPMatrix/qpsb-agents@eab8a285a6720ab92a7ccebc6122d633a9c7905a)
 - code-review@0.1 — base — advisory pre-review on every repo

@@ -22,10 +22,19 @@
 # resolve to the identical token since the org merge; an unreferenced
 # secret id a Dockerfile does not mount is simply unused, never an error).
 #
+# The optional `version` input (spec 002-versioned-auto-deploy T-001,
+# plan.md D2, QPMSEC-726/QPMSEC-707) is additive: empty (the default,
+# every caller not yet migrated to semver-tag.yml) renders the `meta`
+# step's `tags:` exactly as before — `main-{{sha}}` + `latest`; a bare
+# semver string (the caller passes `needs.release.outputs.version` from
+# semver-tag.yml) replaces that with `v<version>` + `latest` for that run
+# only. No other step changes — cosign keyless signing, the private-deps
+# mint, provenance/sbom, and the digest job summary are all untouched.
+#
 # Every `uses:` below is pinned by commit SHA with its tag as a trailing
-# comment. Verified live 2026-09-03 (repo-gates-and-hooks rule 8 — the
-# same table publish-sandbox.yml's own header verified 2026-08-28,
-# re-verified here):
+# comment. Verified live 2026-09-03, re-verified 2026-09-09 for this
+# change (repo-gates-and-hooks rule 8 — the same table publish-
+# sandbox.yml's own header verified 2026-08-28):
 #   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
 #   gh api repos/docker/setup-qemu-action/releases/latest --jq .tag_name         -> v4.3.0
 #   gh api repos/docker/setup-buildx-action/releases/latest --jq .tag_name       -> v4.3.0
@@ -71,6 +80,17 @@ on:
           Comma- or newline-separated QPMatrix repo names this build needs
           a token for (see header). Empty skips the mint and passes no
           build secret.
+        type: string
+        required: false
+        default: ""
+      version:
+        description: >-
+          Bare semver (no leading v, e.g. "0.1.1") from
+          semver-tag.yml's `version` output — spec 002-versioned-
+          auto-deploy T-001, plan.md D2. Empty (the default, every
+          caller not yet migrated) renders `main-{{sha}}`/`latest`,
+          byte-identical to before this input existed. A non-empty
+          value replaces that entirely with `v<version>`/`latest`.
         type: string
         required: false
         default: ""
@@ -134,7 +154,7 @@ jobs:
         with:
           images: ${{ inputs.image }}
           tags: |
-            type=raw,value=main-{{sha}}
+            type=raw,value=${{ inputs.version != '' && format('v{0}', inputs.version) || 'main-{{sha}}' }}
             type=raw,value=latest
 
       - id: build

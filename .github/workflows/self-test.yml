@@ -35,6 +35,31 @@
 # as inputs; it is guarded on `vars.QPM_RUNNER != ''` so it can only run
 # once a real label exists, and a label GitHub cannot match never
 # passes silently: the job queues until its timeout and goes red.
+#
+# semver-tag.yml coverage (spec 002-versioned-auto-deploy T-001,
+# QPMSEC-726/QPMSEC-707): unlike the four gate workflows above,
+# semver-tag.yml cannot be exercised via `uses: ./.github/workflows/
+# semver-tag.yml` against a fixture — git tags are repository-WIDE (no
+# `working-directory` scoping is possible for them the way it is for a
+# language `./check`), and a reusable `workflow_call`'s own
+# `actions/checkout` always resolves to the CALLING repo (proven by
+# every gate job above actually building the CALLER's own code) — so
+# calling it from here would mint a real token and push a real tag onto
+# THIS repo's own history on every self-test run, which self-test must
+# never do. Instead, `scripts/classify-bump.sh`, `scripts/
+# find-latest-tag.sh`, and `scripts/bump-version.sh` hold the SAME logic
+# semver-tag.yml embeds inline (D1a — no separate script a caller's own
+# checkout could miss) as the single source of truth; the jobs below
+# test those files directly against controlled fixtures/scratch repos,
+# and `semver-tag-inline-sync-selftest` proves the inline copies in
+# semver-tag.yml have not silently drifted from them (code-craft rule 7).
+#
+# image-publish.yml's `version` input (plan.md D2) is proved by calling
+# the REAL, pinned `docker/metadata-action` with the two exact `tags:`
+# templates the modified `meta` step now renders for `version: ""` and
+# `version: "0.1.1"` — no image build/push needed to prove tag rendering,
+# so this runs on every PR (unlike `image-publish-selftest` above, which
+# stays workflow_dispatch-only because it pushes a real image).
 name: self-test
 
 on:
@@ -42,6 +67,7 @@ on:
     paths:
       - ".github/workflows/**"
       - "fixtures/**"
+      - "scripts/**"
   workflow_dispatch:
 
 concurrency:
@@ -90,3 +116,166 @@ jobs:
       dockerfile: fixtures/docker-hello/Dockerfile
       context: fixtures/docker-hello
     secrets: inherit
+
+  semver-tag-classify-selftest:
+    runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Four bump classes, fed straight to scripts/classify-bump.sh
+        run: |
+          set -eu
+          assert_bump() {
+            fixture="$1"
+            expected="$2"
+            actual=$(sh scripts/classify-bump.sh < "fixtures/semver-tag/commits-${fixture}.txt")
+            if [ "$actual" != "$expected" ]; then
+              echo "FAIL: fixtures/semver-tag/commits-${fixture}.txt classified as '${actual}', expected '${expected}'" >&2
+              exit 1
+            fi
+            echo "OK: commits-${fixture}.txt -> ${actual}"
+          }
+          assert_bump major major
+          assert_bump minor minor
+          assert_bump patch patch
+          assert_bump none none
+
+  semver-tag-find-tag-selftest:
+    runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: "No prior tag -> FAIL loud (never guess v0.1.0)"
+        run: |
+          set -eu
+          scratch=$(mktemp -d)
+          git init -q "$scratch"
+          git -C "$scratch" config user.name selftest
+          git -C "$scratch" config user.email selftest@example.com
+          git -C "$scratch" commit -q --allow-empty -m "chore: init, no tag"
+
+          set +e
+          output=$(cd "$scratch" && sh "$OLDPWD/scripts/find-latest-tag.sh" 2>&1)
+          exit_status=$?
+          set -e
+
+          if [ "$exit_status" -eq 0 ]; then
+            echo "FAIL: find-latest-tag.sh exited 0 on a repo with no v* tag (expected a loud failure)" >&2
+            exit 1
+          fi
+          case "$output" in
+            FAIL:*) echo "OK: no-tag repo failed loud: $output" ;;
+            *)
+              echo "FAIL: find-latest-tag.sh exited non-zero but without its documented 'FAIL:' message: $output" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: A repo carrying v* tags returns the highest one
+        run: |
+          set -eu
+          scratch=$(mktemp -d)
+          git init -q "$scratch"
+          git -C "$scratch" config user.name selftest
+          git -C "$scratch" config user.email selftest@example.com
+          git -C "$scratch" commit -q --allow-empty -m "chore: init"
+          git -C "$scratch" tag -a v0.1.0 -m "seed"
+          git -C "$scratch" commit -q --allow-empty -m "fix: something"
+          git -C "$scratch" tag -a v0.1.1 -m "patch"
+
+          found=$(cd "$scratch" && sh "$OLDPWD/scripts/find-latest-tag.sh")
+          if [ "$found" != "v0.1.1" ]; then
+            echo "FAIL: expected v0.1.1 (the highest tag), got '${found}'" >&2
+            exit 1
+          fi
+          echo "OK: found the highest tag: $found"
+
+      - name: bump-version.sh arithmetic, all three bump classes
+        run: |
+          set -eu
+          assert_next() {
+            current="$1"; bump="$2"; expected="$3"
+            actual=$(sh scripts/bump-version.sh "$current" "$bump")
+            if [ "$actual" != "$expected" ]; then
+              echo "FAIL: bump-version.sh $current $bump -> '$actual', expected '$expected'" >&2
+              exit 1
+            fi
+            echo "OK: $current + $bump -> $actual"
+          }
+          assert_next v1.2.3 major v2.0.0
+          assert_next v1.2.3 minor v1.3.0
+          assert_next v1.2.3 patch v1.2.4
+
+  semver-tag-inline-sync-selftest:
+    # Proves semver-tag.yml's inline BEGIN/END blocks (D1a) have not
+    # drifted from the scripts/*.sh files self-test actually tests above
+    # — the two tests above would keep passing on a stale copy of the
+    # logic if nothing checked this (checks-narrower-than-their-promise).
+    runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Diff each inline block against its scripts/ source of truth
+        run: |
+          set -eu
+          extract() {
+            file="$1"
+            marker="$2"
+            sed -n "/# BEGIN ${marker}/,/# END ${marker}/p" "$file" \
+              | sed '1d;$d' \
+              | sed 's/^[[:space:]]*//' \
+              | sed '/^$/d'
+          }
+
+          check_pair() {
+            marker="$1"
+            script="$2"
+            if ! diff -u \
+                <(extract .github/workflows/semver-tag.yml "$marker") \
+                <(extract "$script" "$marker"); then
+              echo "FAIL: semver-tag.yml's '${marker}' block has drifted from ${script} — update both together." >&2
+              exit 1
+            fi
+            echo "OK: ${marker} matches ${script}"
+          }
+
+          check_pair classify-bump scripts/classify-bump.sh
+          check_pair find-latest-tag scripts/find-latest-tag.sh
+          check_pair bump-version scripts/bump-version.sh
+
+  image-publish-tags-selftest:
+    # Proves plan.md D2's two tag shapes via the REAL, pinned
+    # docker/metadata-action — no image build/push needed (unlike
+    # image-publish-selftest above, this runs on every PR).
+    runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - name: "version empty (default) -> byte-identical to today"
+        id: meta-empty
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/qpmatrix/qpm-gh-workflows-selftest
+          tags: |
+            type=raw,value=main-{{sha}}
+            type=raw,value=latest
+
+      - name: 'version "0.1.1" -> v0.1.1/latest'
+        id: meta-versioned
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/qpmatrix/qpm-gh-workflows-selftest
+          tags: |
+            type=raw,value=v0.1.1
+            type=raw,value=latest
+
+      - name: Assert both tag shapes render as expected
+        run: |
+          set -eu
+          echo "empty-version tags:"
+          echo "${{ steps.meta-empty.outputs.tags }}"
+          echo "${{ steps.meta-empty.outputs.tags }}" | grep -qE '^ghcr\.io/qpmatrix/qpm-gh-workflows-selftest:main-[0-9a-f]+$'
+          echo "${{ steps.meta-empty.outputs.tags }}" | grep -qxF 'ghcr.io/qpmatrix/qpm-gh-workflows-selftest:latest'
+
+          echo "versioned tags:"
+          echo "${{ steps.meta-versioned.outputs.tags }}"
+          echo "${{ steps.meta-versioned.outputs.tags }}" | grep -qxF 'ghcr.io/qpmatrix/qpm-gh-workflows-selftest:v0.1.1'
+          echo "${{ steps.meta-versioned.outputs.tags }}" | grep -qxF 'ghcr.io/qpmatrix/qpm-gh-workflows-selftest:latest'

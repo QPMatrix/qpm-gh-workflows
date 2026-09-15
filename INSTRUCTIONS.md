@@ -9,23 +9,23 @@ No catalog entry was reachable for `qpm-gh-workflows` at sync time — add `qp-a
 ## Governing ADRs
 - none on record in the catalog snapshot
 
-## Skills mounted (pinned at qp-skills@4f0621aacd9b65267a0b4f37cd73e67ba4a4b909)
-- spec-driven-delivery@1.2.0 — base set — every estate repo
-- worker-dispatch@1.7.0 — base set — every estate repo
-- estate-conventions@1.5.0 — base set — every estate repo
-- code-craft@1.7.0 — base set — every estate repo
-- qa-craft@1.0.0 — base set — every estate repo
-- secrets-and-tenancy@1.1.0 — base set — every estate repo
-- observability-conformance@1.0.0 — base set — every estate repo
-- prompt-injection-defense@1.0.0 — base set — every estate repo
-- docs-craft@1.3.0 — base set — every estate repo
-- repo-gates-and-hooks@1.9.0 — base set — every estate repo
-- board-discipline@2.3.0 — base set — every estate repo
-- spec-development@1.1.0 — base set — every estate repo
-- spec-review@1.1.0 — base set — every estate repo
-- release-and-publish@1.12.0 — .github/workflows/semver-tag.yml
+## Skills mounted (pinned at qpai-skills@29a924f5a339852a041e006a3625f518005078a6)
+- spec-driven-delivery@2.0.0 — base set — every estate repo
+- worker-dispatch@2.2.0 — base set — every estate repo
+- estate-conventions@2.0.0 — base set — every estate repo
+- code-craft@4.1.0 — base set — every estate repo
+- qa-craft@3.0.0 — base set — every estate repo
+- secrets-and-tenancy@2.0.0 — base set — every estate repo
+- observability-conformance@2.0.0 — base set — every estate repo
+- prompt-injection-defense@2.0.0 — base set — every estate repo
+- docs-craft@3.1.0 — base set — every estate repo
+- repo-gates-and-hooks@2.1.0 — base set — every estate repo
+- board-discipline@3.0.0 — base set — every estate repo
+- spec-development@2.0.0 — base set — every estate repo
+- spec-review@2.0.0 — base set — every estate repo
+- release-and-publish@2.0.0 — .github/workflows/semver-tag.yml
 
-## Agents mounted (pinned at qpsb-agents@git:https://github.com/QPMatrix/qpsb-agents@eab8a285a6720ab92a7ccebc6122d633a9c7905a)
+## Agents mounted (pinned at qpai-skills@29a924f5a339852a041e006a3625f518005078a6)
 - code-review@0.1 — base — advisory pre-review on every repo
 - spec-runtime-bindings@0.1 — base — binds spec-development/spec-review to the runtime
 - reviewer@0.1 — base — the spec-development per-task adversarial review stage

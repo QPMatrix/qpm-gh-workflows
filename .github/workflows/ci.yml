@@ -3,7 +3,7 @@
 # checkout pin verified at birth via:
 #   gh api repos/actions/checkout/releases/latest --jq .tag_name  -> v7.0.1
 #
-# Private cross-repo dependencies (QPMSEC-345, and QPMSEC-436 review round 2 finding 2 for qpsb-skills/qpsb-agents which every born repo now depends on): QPMatrix/qpsb-skills, QPMatrix/qpsb-agents.
+# Private cross-repo dependencies (QPMSEC-345, and QPMSEC-436 review round 2 finding 2 for qpai-skills which every born repo now depends on): QPMatrix/qpai-skills.
 # The default GITHUB_TOKEN cannot fetch a private repo, so this
 # workflow mints a scoped App installation token and rewrites git
 # URLs to use it (pattern: qp-context/.github/workflows/ci.yml).
@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Mint QPMatrix installation token (qpsb-skills, qpsb-agents)
+      - name: Mint QPMatrix installation token (qpai-skills)
         id: qpmatrix-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -48,8 +48,7 @@ jobs:
           private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
           owner: QPMatrix
           repositories: |
-            qpsb-skills
-            qpsb-agents
+            qpai-skills
       - name: Configure git auth for QPMatrix
         run: |
           git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"

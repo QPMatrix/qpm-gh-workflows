@@ -1,1 +1,1 @@
-../../.cache/qpsb-agents/agents/claude/spec-runtime-bindings.md
+../../.cache/qpai-skills/agents/spec-runtime-bindings.md

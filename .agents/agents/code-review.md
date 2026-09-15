@@ -1,1 +1,1 @@
-../../.cache/qpsb-agents/agents/claude/code-review.md
+../../.cache/qpai-skills/agents/code-review.md

@@ -1,0 +1,97 @@
+# Reusable PR-only gate for repositories whose complete gate is ./check.
+# Trigger and concurrency belong to the caller: pull_request plus
+# workflow_dispatch, with cancellation (see docs/workflows.md).
+# Uses the same docs-only detection and private-dependency auth as the
+# language gates. The only project command is ./check, without arguments.
+#
+# Provides checkout and optional git authentication; installs no language
+# toolchain, caches, or CI tools. The selected runner must already provide
+# a POSIX shell, git, and python3 (required by estate instruction gates).
+# ubuntu-latest provides these; custom runner owners must provision them.
+# Any further dependencies and setup belong to the caller's ./check.
+#
+# Callers with non-empty private-deps MUST pass `secrets: inherit` on
+# the calling job (or explicitly map QPASSISTANCE_CLIENT_ID and
+# QPASSISTANCE_PRIVATE_KEY). See docs/workflows.md, "Caller secrets".
+# Empty private-deps needs no secrets and skips the token mint.
+#
+name: check-gate
+
+on:
+  workflow_call:
+    inputs:
+      private-deps:
+        description: >-
+          Comma- or newline-separated QPMatrix repo names this repo fetches
+          over git — the mandatory qpai-skills source included by the CALLER, not assumed here. Empty
+          skips the mint entirely.
+        type: string
+        required: false
+        default: ""
+      working-directory:
+        description: Directory (relative to repo root) the caller's project lives in — used by the self-test workflow to point at an in-repo fixture; real callers leave it at ".".
+        type: string
+        required: false
+        default: "."
+      runner:
+        description: >-
+          Runner label for every job in this workflow (QPMSEC-630). Empty
+          (the default) falls through to the caller repo's QPM_RUNNER
+          Actions variable, then to ubuntu-latest — README "Runners".
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  changes:
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
+    outputs:
+      docs_only: ${{ steps.docs-only.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: docs-only
+        name: Detect a docs-only change (ADR-031 c)
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="HEAD~1"
+          fi
+          if ! git cat-file -e "$base" 2>/dev/null; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" HEAD)"
+          if [ -z "$changed" ]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -qvE '(\.md$|^docs/|^LICENSE$|^\.gitignore$)'; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    needs: changes
+    runs-on: ${{ inputs.runner || vars.QPM_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Mint QPMatrix installation token
+        id: qpmatrix-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.QPASSISTANCE_CLIENT_ID }}
+          private-key: ${{ secrets.QPASSISTANCE_PRIVATE_KEY }}
+          owner: QPMatrix
+          repositories: ${{ inputs.private-deps }}
+      - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
+        name: Configure git auth for QPMatrix
+        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        env:
+          QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
+      - if: needs.changes.outputs.docs_only != 'true'
+        run: ./check
+        working-directory: ${{ inputs.working-directory }}

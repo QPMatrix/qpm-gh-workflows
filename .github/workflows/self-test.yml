@@ -1,7 +1,7 @@
 # Proves the reusable workflows in THIS repo actually work before any
 # consumer's PR ever calls them (QPMSEC-570 scope item 2: "a broken
 # reusable workflow is red in its own repo before any consumer sees it").
-# Calls each of rust-gate.yml/go-gate.yml/python-gate.yml/ts-gate.yml
+# Calls check-gate.yml and each language gate
 # against its own tiny in-repo fixture under fixtures/ (a `working-
 # directory` input every gate workflow carries for exactly this reason —
 # real callers leave it at "."), and image-publish.yml against
@@ -80,6 +80,11 @@ permissions:
   id-token: write
 
 jobs:
+  check-gate-selftest:
+    uses: ./.github/workflows/check-gate.yml
+    with:
+      working-directory: fixtures/check-hello
+
   rust-gate-selftest:
     uses: ./.github/workflows/rust-gate.yml
     with:

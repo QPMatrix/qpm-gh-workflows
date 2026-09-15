@@ -9,7 +9,7 @@ No catalog entry was reachable for `qpm-gh-workflows` at sync time — add `qp-a
 ## Governing ADRs
 - none on record in the catalog snapshot
 
-## Skills mounted (pinned at qpai-skills@29a924f5a339852a041e006a3625f518005078a6)
+## Skills mounted (pinned at qpai-skills@287abdf6a0ab11b495c44b82be192807280dc834)
 - spec-driven-delivery@2.0.0 — base set — every estate repo
 - worker-dispatch@2.2.0 — base set — every estate repo
 - estate-conventions@2.0.0 — base set — every estate repo
@@ -25,7 +25,7 @@ No catalog entry was reachable for `qpm-gh-workflows` at sync time — add `qp-a
 - spec-review@2.0.0 — base set — every estate repo
 - release-and-publish@2.0.0 — .github/workflows/semver-tag.yml
 
-## Agents mounted (pinned at qpai-skills@29a924f5a339852a041e006a3625f518005078a6)
+## Agents mounted (pinned at qpai-skills@287abdf6a0ab11b495c44b82be192807280dc834)
 - code-review@0.1 — base — advisory pre-review on every repo
 - spec-runtime-bindings@0.1 — base — binds spec-development/spec-review to the runtime
 - reviewer@0.1 — base — the spec-development per-task adversarial review stage

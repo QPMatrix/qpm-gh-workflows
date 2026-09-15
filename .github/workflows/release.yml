@@ -1,0 +1,27 @@
+# Tags this repository's own releases. semver-tag.yml is a reusable workflow
+# every consumer calls to version itself; until today nothing called it for
+# the repository that owns it, so the shared workflows sat at v0.3.0 while
+# main moved on — and every caller in the estate pins @main because there was
+# no tag that contained what they needed (QPAI-136). The release mechanism now
+# applies to the repository that ships it.
+#
+# A local `uses: ./` call inherits GITHUB_TOKEN automatically; the reusable
+# workflow declares `contents: write` itself. push-to-main only: a tag is cut
+# from what was merged, never from a pull request.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/semver-tag.yml

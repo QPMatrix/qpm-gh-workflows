@@ -1,0 +1,10 @@
+#!/bin/sh
+# No language project or toolchain setup: exercise the runner's python3,
+# the working-directory input, and the no-argument ./check contract.
+set -eu
+[ "$#" -eq 0 ] || { echo "check: expected no arguments" >&2; exit 1; }
+python3 - <<'PYTHON'
+from pathlib import Path
+assert Path("message.txt").read_text() == "hello from check-gate\n"
+print("check-hello: green")
+PYTHON

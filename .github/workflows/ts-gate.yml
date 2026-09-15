@@ -1,3 +1,8 @@
+# Callers with non-empty private-deps MUST pass `secrets: inherit` on
+# the calling job (or explicitly map QPASSISTANCE_CLIENT_ID and
+# QPASSISTANCE_PRIVATE_KEY). See docs/workflows.md, "Caller secrets".
+# Empty private-deps needs no secrets and skips the token mint.
+#
 # Reusable PR-only quality gate for a TypeScript UI/tooling repo (ADR-031,
 # code-craft: TypeScript is UI/tooling only, never a backend). Three jobs
 # run in PARALLEL — format-lint, test, image — each calling the caller
@@ -100,7 +105,7 @@ on:
         description: >-
           Comma- or newline-separated QPMatrix repo names this repo fetches
           over git (`github:QPMatrix/<name>` bun dependencies) — the
-          mandatory qpsb-skills/qpsb-agents pair included by the CALLER,
+          mandatory qpai-skills source included by the CALLER,
           not assumed here. Empty skips the mint entirely.
         type: string
         required: false

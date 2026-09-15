@@ -1,10 +1,10 @@
 # Workflow reference
 
-Five reusable `workflow_call` workflows live in `.github/workflows/`. Four
-are per-language PR-only gates (ADR-031 a–e); the fifth is the CD image
-publish (ADR-031 f). `self-test.yml` calls all five against the fixtures
-in `fixtures/` on every PR that touches a workflow or a fixture — see
-"Self-test" below.
+Seven reusable `workflow_call` workflows live in `.github/workflows/`:
+four language gates, the generic `check-gate.yml`, `image-publish.yml`,
+and `semver-tag.yml`. The gates are PR-only (ADR-031 a–e); callers own
+the triggers and concurrency. `self-test.yml` exercises fixtures and
+release helpers — see "Self-test" below.
 
 ## The gate workflows: `rust-gate.yml`, `go-gate.yml`, `python-gate.yml`, `ts-gate.yml`
 
@@ -21,16 +21,29 @@ Common inputs:
 
 | Input | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `private-deps` | string | `""` | Comma/newline QPMatrix repo names this repo fetches over git (the mandatory `qpsb-skills`/`qpsb-agents` pair included by the caller). Empty skips the App-token mint entirely. |
+| `private-deps` | string | `""` | Comma/newline QPMatrix repo names this repo fetches over git (the mandatory `qpai-skills` source included by the caller). Empty skips the App-token mint entirely. |
 | `working-directory` | string | `"."` | Where the caller's project lives, relative to repo root. Real callers leave this alone; `self-test.yml` points it at a fixture. |
 | `runner` | string | `""` | Runner label for every job; empty falls through to the caller repo's `QPM_RUNNER` variable, then `ubuntu-latest` — README "Runners". |
 
 `rust-gate.yml` also takes `cargo-deny-version` (default `0.20.2`) and
 `runner_heavy` (default `""`, the cargo jobs' runner — README "Runners");
 `python-gate.yml` also takes `python-version-file` (default
-`.python-version`). Every job that mints a token needs
-`secrets: inherit` from the caller so `QPASSISTANCE_CLIENT_ID`/
-`QPASSISTANCE_PRIVATE_KEY` reach it without being re-declared.
+`.python-version`).
+
+### Caller secrets
+
+**For every gate, a caller with non-empty `private-deps` must put
+`secrets: inherit` on the calling job**, alongside `uses:` and `with:`
+(as in the example below). The caller must have both
+`QPASSISTANCE_CLIENT_ID` and `QPASSISTANCE_PRIVATE_KEY` available.
+Alternatively, explicitly map those two names under the calling job's
+`secrets:`. Without them, the App-token mint fails. Callers with empty
+`private-deps` need no secrets; this is why the gates do not declare
+unconditionally required secrets.
+
+The local fixture calls use empty `private-deps`, so they do not test
+cross-repository secret forwarding or the App-token mint. A green
+self-test does not prove a consumer passed its secrets correctly.
 
 ### The thin-caller `ci.yml` shape
 
@@ -48,7 +61,7 @@ jobs:
   gate:
     uses: QPMatrix/qpm-gh-workflows/.github/workflows/rust-gate.yml@v1
     with:
-      private-deps: qpm-rs-service,qpm-rs-auth,qpsb-contracts,qpsb-skills,qpsb-agents
+      private-deps: qpm-rs-service,qpm-rs-auth,qpsb-contracts,qpai-skills
     secrets: inherit
 ```
 
@@ -56,6 +69,42 @@ jobs:
 wire-gate` emit exactly this shape (substituting the language-appropriate
 gate file and the repo's own derived `private-deps` list) — see those
 skills for how the list is derived per language.
+
+## `check-gate.yml` — generic gate
+
+For repositories such as qpai-skills, qpai-architecture, and qpai-infra,
+whose complete gate is `./check`. It takes the same `private-deps`,
+`working-directory`, and `runner` inputs above. The `changes` job uses
+the language gates' docs-only detection; the `check` job checks out the
+caller, configures optional private-dependency git authentication, and
+runs exactly `./check` with no arguments. Docs-only changes skip the
+real-work steps while the job still reports success.
+
+It installs no toolchain or CI tools and supplies no dependency cache.
+The runner must already provide a POSIX shell, git, and **python3**;
+`ubuntu-latest` includes them, and custom runners must be provisioned
+accordingly. The caller's `./check` owns further setup and dependencies.
+
+```yaml
+name: ci
+on:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  gate:
+    uses: QPMatrix/qpm-gh-workflows/.github/workflows/check-gate.yml@v1
+    with:
+      private-deps: qpai-skills
+    secrets: inherit
+```
+
+Use a release tag that contains `check-gate.yml`; the example requires
+publishing this workflow in `v1` before consumers adopt it.
 
 ## `image-publish.yml` — CD
 
@@ -181,6 +230,8 @@ this repo's own change.
 
 `self-test.yml` calls every workflow above against a real, tiny fixture
 under `fixtures/`, via each gate's `working-directory` input:
+`fixtures/check-hello` (a no-argument gate that uses runner-provided
+python3 and reads a fixture-relative file), plus
 `fixtures/rust-hello`, `fixtures/go-hello`, `fixtures/python-hello`,
 `fixtures/ts-hello` (each a real crate/module/package with its own
 `fmt`/`lint`/`test`/`image`-capable `./check`), and `fixtures/docker-hello`

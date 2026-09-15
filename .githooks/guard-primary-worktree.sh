@@ -4,9 +4,9 @@
 # a worktree.sh tree.
 #
 # WHY: on QPMSEC-209 a seat's scope was revised mid-task to a SECOND
-# repo (qp-skills). It never ran `worktree.sh worker` for that repo and
+# repo (qpai-skills). It never ran `worktree.sh worker` for that repo and
 # committed straight into the SHARED checkout at
-# .../qpm-secondbrain/qp-skills, on branch task/QPMSEC-209 — the
+# .../qpm-secondbrain/qpai-skills, on branch task/QPMSEC-209 — the
 # owner's own working tree silently became a seat's workspace while a
 # second seat (QPMSEC-387) worked the SAME repo, at the SAME time, in
 # its own correctly-isolated worktree. worktree.sh was already fully
@@ -48,7 +48,7 @@
 # inventing a stronger one that doesn't exist anywhere else either.
 #
 # INSTALL: committed once per repo at .githooks/guard-primary-worktree.sh
-# (copied verbatim from THIS file — qpsb-skills
+# (copied verbatim from THIS file — qpai-skills
 # skills/worker-dispatch/scripts/guard-primary-worktree.sh is the single
 # source of truth, code-craft rule 7's documented-denormalization
 # exception; no cross-repo script-sourcing convention exists in this

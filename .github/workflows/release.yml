@@ -5,9 +5,15 @@
 # no tag that contained what they needed (QPAI-136). The release mechanism now
 # applies to the repository that ships it.
 #
-# A local `uses: ./` call inherits GITHUB_TOKEN automatically; the reusable
-# workflow declares `contents: write` itself. push-to-main only: a tag is cut
-# from what was merged, never from a pull request.
+# A reusable workflow receives NONE of the caller's secrets unless passed —
+# and that is true for a local `uses: ./` call too. The first run of this
+# file died at the App-token mint with an empty client id for exactly that
+# reason, which also corrects a claim made earlier today: self-test.yml does
+# not "inherit secrets because it is local"; it never reaches the mint,
+# because its fixtures declare no private dependencies. The one path the
+# self-test never exercises is the one that needs a secret.
+#
+# push-to-main only: a tag is cut from what was merged, never from a PR.
 name: release
 
 on:
@@ -25,3 +31,4 @@ permissions:
 jobs:
   release:
     uses: ./.github/workflows/semver-tag.yml
+    secrets: inherit

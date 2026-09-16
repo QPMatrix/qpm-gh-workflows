@@ -60,6 +60,16 @@
 # `version: "0.1.1"` — no image build/push needed to prove tag rendering,
 # so this runs on every PR (unlike `image-publish-selftest` above, which
 # stays workflow_dispatch-only because it pushes a real image).
+#
+# git-auth-insteadof-selftest (fixed 2026-09-16, ts-gate.yml header):
+# `fixtures/ts-hello` cannot carry a real private git dependency, so this
+# is a network-free proof instead — it runs `scripts/
+# verify-git-auth-insteadof.sh`, which applies the exact three `git
+# config --global [--add] url....insteadOf ...` lines every "Configure
+# git auth for QPMatrix" step now runs (https, `ssh://`, and the
+# scp-like `git@` form) against a throwaway `GIT_CONFIG_GLOBAL`, then
+# asserts `git ls-remote --get-url` rewrites all three forms to the same
+# https+token target — `insteadOf` resolution never touches the network.
 name: self-test
 
 on:
@@ -104,6 +114,14 @@ jobs:
     uses: ./.github/workflows/ts-gate.yml
     with:
       working-directory: fixtures/ts-hello
+
+  git-auth-insteadof-selftest:
+    runs-on: ${{ vars.QPM_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: All three private-dep URL forms rewrite identically (network-free)
+        run: sh scripts/verify-git-auth-insteadof.sh
 
   rust-gate-selftest-flagged-runner:
     if: vars.QPM_RUNNER != ''

@@ -45,6 +45,23 @@ The local fixture calls use empty `private-deps`, so they do not test
 cross-repository secret forwarding or the App-token mint. A green
 self-test does not prove a consumer passed its secrets correctly.
 
+A private git dependency can be spelled three ways —
+`https://github.com/QPMatrix/<repo>.git`, `ssh://git@github.com/QPMatrix/<repo>.git`,
+and the scp-like `git@github.com:QPMatrix/<repo>.git` — and a caller's
+package manager does not always pick the form the caller wrote: Bun
+resolves a `git+ssh://` dependency by trying an https clone first and
+the ssh form second (reproduced 2026-09-16 against qpai-core's private
+dependency), so an https-only rewrite authenticates the first attempt
+and leaves the second to fail with `Permission denied (publickey)`.
+Every "Configure git auth for QPMatrix" step in this repo's gate
+workflows therefore rewrites all three forms to the same
+`https://x-access-token:<tok>@github.com/QPMatrix/` target. A caller
+that does its own git rewrite instead — a Dockerfile building with
+BuildKit, for instance, which gets the token as a build secret rather
+than an already-configured git — must cover the same three URL forms,
+not just https, or it will fail the identical way for an ssh-form
+dependency.
+
 ### The thin-caller `ci.yml` shape
 
 ```yaml

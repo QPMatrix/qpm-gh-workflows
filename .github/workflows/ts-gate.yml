@@ -82,6 +82,24 @@
 # BuildKit secret env vars but git itself was never configured to use
 # it). Fixed the same way format-lint/test already had it.
 #
+# "Configure git auth for QPMatrix" rewrites all THREE url forms a
+# private git dependency can spell, not just https (reproduced
+# 2026-09-16: qpai-core's `git+ssh://git@github.com/QPMatrix/<repo>.git`
+# dependency failed `bun install` in every ts-gate job — Bun resolves a
+# `git+ssh` dependency by trying an https clone first, which fails
+# `remote: Invalid username or token` because the https `insteadOf` rule
+# alone still hits an unauthenticated github.com, then falls back to a
+# real ssh clone, which fails `Permission denied (publickey)` because no
+# key is configured on the runner). The `--add` rules below point
+# `ssh://git@github.com/QPMatrix/` and `git@github.com:QPMatrix/` (the
+# scp-like form) at the SAME `https://x-access-token:<tok>@github.com/
+# QPMatrix/` target as the https rule, so whichever form Bun (or any
+# other tool) tries, it authenticates identically. Applies to every gate
+# workflow with this step (go/rust/python/check-gate, this repo's own
+# ci.yml) — grep `insteadOf` in `.github/workflows/` for the full list.
+# A caller Dockerfile doing its own rewrite for BuildKit (docs/
+# workflows.md, "private deps") must cover the same three forms.
+#
 # Every `uses:` below is pinned by commit SHA with its tag as a trailing
 # comment. Verified live 2026-09-03 (repo-gates-and-hooks rule 8):
 #   gh api repos/actions/checkout/releases/latest --jq .tag_name                 -> v7.0.1
@@ -175,7 +193,10 @@ jobs:
           repositories: ${{ inputs.private-deps }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Configure git auth for QPMatrix
-        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        run: |
+          git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "ssh://git@github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "git@github.com:QPMatrix/"
         env:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
@@ -228,7 +249,10 @@ jobs:
           repositories: ${{ inputs.private-deps }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Configure git auth for QPMatrix
-        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        run: |
+          git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "ssh://git@github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "git@github.com:QPMatrix/"
         env:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''
@@ -274,7 +298,10 @@ jobs:
           repositories: ${{ inputs.private-deps }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/Dockerfile', inputs.working-directory)) != '' && inputs.private-deps != ''
         name: Configure git auth for QPMatrix
-        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        run: |
+          git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "ssh://git@github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "git@github.com:QPMatrix/"
         env:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true' && hashFiles(format('{0}/scripts/ci-tools.sh', inputs.working-directory)) != ''

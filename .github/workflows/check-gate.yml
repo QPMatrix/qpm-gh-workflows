@@ -89,7 +89,10 @@ jobs:
           repositories: ${{ inputs.private-deps }}
       - if: needs.changes.outputs.docs_only != 'true' && inputs.private-deps != ''
         name: Configure git auth for QPMatrix
-        run: git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+        run: |
+          git config --global url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "https://github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "ssh://git@github.com/QPMatrix/"
+          git config --global --add url."https://x-access-token:${QPMATRIX_TOKEN}@github.com/QPMatrix/".insteadOf "git@github.com:QPMatrix/"
         env:
           QPMATRIX_TOKEN: ${{ steps.qpmatrix-token.outputs.token }}
       - if: needs.changes.outputs.docs_only != 'true'

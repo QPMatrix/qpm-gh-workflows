@@ -17,4 +17,7 @@ sh scripts/install-actionlint.sh
 export PATH="${ACTIONLINT_BIN_DIR:-$HOME/.local/bin}:$PATH"
 actionlint .github/workflows/*.yml
 
+echo "==> verify-git-auth-insteadof.sh (network-free proof the git-auth rewrite covers all three private-dep URL forms)"
+sh scripts/verify-git-auth-insteadof.sh
+
 echo "check: green"
